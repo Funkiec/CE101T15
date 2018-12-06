@@ -1,6 +1,8 @@
-#invite people for the Kaggle party
+#Used for data analysis
 import pandas as pd
+#Used for generating graphs
 import matplotlib.pyplot as plt
+#Used ontop of matplotlib to make more complex visualizations
 import seaborn as sns
 import numpy as np
 from scipy.stats import norm
@@ -8,7 +10,6 @@ from sklearn.preprocessing import StandardScaler
 from scipy import stats
 import warnings
 warnings.filterwarnings('ignore')
-import matplotlib.pyplot as plt
 
 df_train = pd.read_csv('../input/train.csv')
 
