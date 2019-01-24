@@ -3,18 +3,22 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import scipy
+import warnings
 # %matplotlib inline
+
+warnings.simplefilter('ignore', np.RankWarning)
 
 train_data = None 		# pandas data structure used to train our program
 lineParameters = None 	# a dictionary of all line parameters (from getLineParameters(variable)) for each variable
 correlations = None 	# a dictionary of correlations of each variable to salePrice
 test_data = None 		# pandas data structure used to test our program
 
+polyDeg = 5 #degree of the polynomial fitted to each variable
 
-def getLineParameters(varName):
+def getFunctionParameters(varName):
 	# returns (a,b) of a line y=ax+b of best fit for the variable provided
 	# uses linear regression to get a and b
-	return tuple(np.polyfit(train_data[varName], train_data['SalePrice'], 1))
+	return tuple(np.polyfit(train_data[varName], train_data['SalePrice'], polyDeg))
 	
 def calculateCorrelations():
 	global correlations
@@ -28,10 +32,25 @@ def loadData(trainFile, testFile):
 	# writes the train data from a file to train_data
 	global train_data
 	train_data = pd.read_csv(trainFile)
+	
+	#how much data is missing from each variable
+	missingPercentage = train_data.isnull().sum()/train_data.isnull().count()
+	#removing each variable which is missing in at least 10% of cases
+	toRemove = []
+	for column in train_data.columns:
+		if(missingPercentage[column] >= 0.1):	
+			print("Removing",column)
+			toRemove.append(column)
+	
+	for column in toRemove:
+		del train_data[column]
+	
 	train_data.fillna(0, inplace=True)
 	
 	global test_data
 	test_data = pd.read_csv(testFile)#train_data[len(train_data)//2:]
+	for column in toRemove:
+		del test_data[column]
 	test_data.fillna(0, inplace=True)
 	
 	for varName in train_data:
@@ -60,14 +79,26 @@ def loadData(trainFile, testFile):
 	
 	calculateCorrelations()
 
+def calcPolynomial(x, poly):
+	result = 0
+	for power, coefficient in enumerate(poly):
+		result += coefficient * x**(polyDeg-power)
+	return result
+	
 def getEstimate(varName, value):
-	a, b = getLineParameters(varName)
-	estimatedSalePrice = a*value+b
+	poly = getFunctionParameters(varName)
+	estimatedSalePrice = calcPolynomial(value, poly)
 	return estimatedSalePrice
 	
 def getEstimatedValues(varName):
-	a, b = getLineParameters(varName)
-	return [a*x+b for x in train_data[varName]]
+	poly = getFunctionParameters(varName)
+	values = [calcPolynomial(x, poly) for x in train_data[varName]]
+	r2 = 0
+	for index, x in enumerate(train_data[varName]):
+		actual_y = train_data["SalePrice"][index]
+		estimate_y = values[index]
+		r2 += (actual_y - estimate_y)**2
+	return values, r2
 	
 def getPredictedPrice(variables, treshold):
 	# variables: pandas row of all variables 
@@ -109,13 +140,14 @@ def getPredictedPrice(variables, treshold):
 		return 0
 	return estimatedPrice/corrSum
 
-def showScatterPlotOf(variable):
+def scatterPlotOf(variable):
 	data = pd.concat([train_data['SalePrice'], train_data[variable]], axis=1)
-	a,b = getLineParameters(variable)
-	print(a,b)
+	estimates, r2 = getEstimatedValues(variable)
+	# print(a,b)
 	plt.plot(train_data[variable], train_data["SalePrice"], 'b.')
-	plt.plot(train_data[variable], getEstimatedValues(variable), 'r-')
-	plt.show()
+	plt.plot(train_data[variable], estimates, 'r.')
+	plt.xlabel(variable)
+
 	
 def showBoxPlotOf(variable):
 	data = pd.concat([train_data['SalePrice'], train_data[variable]], axis=1)
@@ -127,10 +159,15 @@ def showBoxPlotOf(variable):
 loadData("../data/train.csv", "../data/test.csv")
 
 treshold = 0.75
-
+predictedData = {"Id":[],"SalePrice":[]}
 for index, row in test_data.iterrows():
 	predicted = getPredictedPrice(row, treshold)
 	id = row['Id']
-	print(str(id)+", "+str(predicted))
+	predictedData["Id"].append(int(id))
+	predictedData["SalePrice"].append(predicted)
+	# print(str(id)+", "+str(predicted))
+	
+pd.DataFrame(predictedData).to_csv("predicted.csv", columns=["Id","SalePrice"], index=False)
+
 
 
