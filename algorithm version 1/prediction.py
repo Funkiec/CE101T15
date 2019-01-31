@@ -121,7 +121,7 @@ def getPredictedPrice(variables, treshold):
 		try:
 			varVal = variables[varName]
 			estimate = getEstimate(varName, varVal)
-			corr = getCorr(varName)
+			corr = 1/(getMSE(varName))
 			
 			if(corr > treshold):
 				estimates[varName] = (estimate, corr)
