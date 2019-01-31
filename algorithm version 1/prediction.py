@@ -12,6 +12,7 @@ train_data = None 		# pandas data structure used to train our program
 lineParameters = None 	# a dictionary of all line parameters (from getLineParameters(variable)) for each variable
 correlations = None 	# a dictionary of correlations of each variable to salePrice
 test_data = None 		# pandas data structure used to test our program
+mseValues = None        #dict of mse values 
 
 polyDeg = 5 #degree of the polynomial fitted to each variable
 
@@ -27,6 +28,11 @@ def calculateCorrelations():
 def getCorr(varName):
 	# return the correlation between the variable and sale price as a number
 	return correlations['SalePrice'][varName]
+
+def storeMSE()
+         for varName in train_data.columns[:-1]:
+		mseValue = getMSE(varname)
+		mseValues = [varName] = mseValue
 
 def loadData(trainFile, testFile):
 	# writes the train data from a file to train_data
