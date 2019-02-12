@@ -12,7 +12,9 @@ train_data = None 		# pandas data structure used to train our program
 lineParameters = None 	# a dictionary of all line parameters (from getLineParameters(variable)) for each variable
 correlations = None 	# a dictionary of correlations of each variable to salePrice
 test_data = None 		# pandas data structure used to test our program
-mseValues = None        #dict of mse values 
+mseValues = None        # dict of mse values 
+varBoundaries = None	# dict of tuples containing the min and max values of each variable in train_data
+
 
 polyDeg = 5 #degree of the polynomial fitted to each variable
 
@@ -28,11 +30,16 @@ def calculateCorrelations():
 def getCorr(varName):
 	# return the correlation between the variable and sale price as a number
 	return correlations['SalePrice'][varName]
+	
+def getMSE(varName):
+	return getEstimatedValues(varName)[1]
 
-def storeMSE()
-         for varName in train_data.columns[:-1]:
-		mseValue = getMSE(varname)
-		mseValues = [varName] = mseValue
+def storeMSE():
+	global mseValues
+	mseValues = {}
+	for varName in train_data.columns[:-1]:
+		mseValue = getMSE(varName)
+		mseValues[varName] = mseValue
 
 def loadData(trainFile, testFile):
 	# writes the train data from a file to train_data
@@ -50,8 +57,23 @@ def loadData(trainFile, testFile):
 	
 	for column in toRemove:
 		del train_data[column]
+		
+	global varBoundaries 
+	varBoundaries = {}
 	
 	train_data.fillna(0, inplace=True)
+	
+	foundBoundaries = []
+	for varName in train_data.columns:
+		try:
+			type = train_data.dtypes[varName]
+			if(type in ["int64","float64"]):
+				minimum = train_data[train_data[varName] != np.nan][varName].min()
+				maximum = train_data[train_data[varName] != np.nan][varName].max()
+				varBoundaries[varName] = (minimum, maximum)
+				foundBoundaries.append(varName)
+		except:
+			pass
 	
 	global test_data
 	test_data = pd.read_csv(testFile)#train_data[len(train_data)//2:]
@@ -62,6 +84,7 @@ def loadData(trainFile, testFile):
 	for varName in train_data:
 		
 		type = train_data.dtypes[varName]
+		# print(varName, "(", type, "):")
 		if(type not in ["int64","float64"]):
 			# the variable is categorical, not numerical
 			
@@ -73,17 +96,27 @@ def loadData(trainFile, testFile):
 				
 				train_data.loc[train_data[varName]==category,varName] = means[category]
 				test_data.loc[test_data[varName]==category,varName] = means[category]
+				# print("\t", "{0:10}".format(str(category)), "==>\t", means[category])
 				
 				
 			for category in test_data[varName].unique():
 				if(category not in categories):
-					test_data.loc[test_data[varName]==category,varName] = 0
+					test_data.loc[test_data[varName]==category,varName] = -1
 				
 			train_data[varName] = train_data[varName].astype('float64', copy=False)
 			test_data[varName] = test_data[varName].astype('float64', copy=False)
 			# print(train_data[varName])
+		# else:
+			# print("\t", "<{:<10};{:>10}>".format(varBoundaries[varName][0], varBoundaries[varName][1]))
+		if(varName not in foundBoundaries):
+			minimum = train_data[train_data[varName] != np.nan][varName].min()
+			maximum = train_data[train_data[varName] != np.nan][varName].max()
+			varBoundaries[varName] = (minimum, maximum)
+			foundBoundaries.append(varName)
+			
 	
 	calculateCorrelations()
+	storeMSE()
 
 def calcPolynomial(x, poly):
 	result = 0
@@ -99,14 +132,14 @@ def getEstimate(varName, value):
 def getEstimatedValues(varName):
 	poly = getFunctionParameters(varName)
 	values = [calcPolynomial(x, poly) for x in train_data[varName]]
-	r2 = 0
+	mse = 0
 	for index, x in enumerate(train_data[varName]):
 		actual_y = train_data["SalePrice"][index]
 		estimate_y = values[index]
-		r2 += (actual_y - estimate_y)**2
-	return values, r2
+		mse += (actual_y - estimate_y)**2
+	return values, mse/len(values)
 	
-def getPredictedPrice(variables, treshold):
+def getPredictedPrice(variables, variablesToUse):
 	# variables: pandas row of all variables 
 	#            provided to the program {varName: varValue}
 
@@ -123,28 +156,45 @@ def getPredictedPrice(variables, treshold):
 	
 	estimates = {} #{varName : (estimatedPrice, correlationToSalePrice)}
 	
+	filtered = []
+	
 	for varName in train_data.columns[:-1]:
+		varVal = variables[varName]
+
+		#if the value is in the range of values as in the train_data
+		# print('min', varBoundaries[varName][0])
+		# print('val', varVal, type(varVal))
+		# print('max', varBoundaries[varName][1])
+		power10 = 10**10
+		if(varBoundaries[varName][0] <= varVal <= varBoundaries[varName][1]):
+			weight = power10/mseValues[varName]
+			filtered.append((varName, weight))
+		else:
+			# print("NOT using", varName, "=", varVal)
+			pass
+			
+	filtered.sort(key = lambda v: -v[1])
+	# print()
+	weightPower = 3
+	for varName, weight in filtered[:variablesToUse]:
 		try:
 			varVal = variables[varName]
-			estimate = getEstimate(varName, varVal)
-			corr = 1/getMSE(varName)
-			
-			if(corr > treshold):
-				estimates[varName] = (estimate, corr)
-				# print(varName, (estimate, corr))
+			estimate = getEstimate(varName, varVal)			
+			estimates[varName] = (estimate, weight**weightPower)
+			# print(varName, (estimate, weight))
 		except:
 			# print(varName, "error")
 			pass
 		
-	corrSum = 0
+	weightSum = 0
 	estimatedPrice = 0
 	
-	for varName, (estimate, corr) in estimates.items():
-		corrSum += corr
-		estimatedPrice += estimate
-	if(corrSum == 0):
+	for varName, (estimate, weight) in estimates.items():
+		weightSum += weight
+		estimatedPrice += estimate*weight
+	if(weightSum == 0):
 		return 0
-	return estimatedPrice/corrSum
+	return estimatedPrice/weightSum
 
 def scatterPlotOf(variable):
 	data = pd.concat([train_data['SalePrice'], train_data[variable]], axis=1)
@@ -164,10 +214,18 @@ def showBoxPlotOf(variable):
 
 loadData("../data/train.csv", "../data/test.csv")
 
-treshold = 0.75
+# for varName, (min, max) in varBoundaries.items():
+	# print(varName.format("s20"), min, max)
+
 predictedData = {"Id":[],"SalePrice":[]}
-for index, row in test_data.iterrows():
-	predicted = getPredictedPrice(row, treshold)
+for index, row in list(test_data.iterrows()):
+	
+	#								   ||
+	#predict the price based on 	   \/	best variables
+	predicted = getPredictedPrice(row, 5)
+	# print("\nPredicted:", predicted)
+	
+	#saving the result to a .csv file
 	id = row['Id']
 	predictedData["Id"].append(int(id))
 	predictedData["SalePrice"].append(predicted)
